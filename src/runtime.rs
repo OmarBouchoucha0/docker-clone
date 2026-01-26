@@ -68,17 +68,17 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
         new_args.extend(args);
         return exec_command("/bin/busybox", new_args);
     }
+    println!("THE PATH : {:?}", path);
+
     return exec_command(&command, args);
 }
 
 fn exec_command(command: &str, args: Vec<String>) -> isize {
     println!("Executing {:?} with args {:?}", command, args);
     let cmd = CString::new(command).unwrap();
-    let args: Vec<CString> = args
-        .iter()
-        .map(|s| CString::new(s.as_str()).unwrap())
-        .collect();
-    let Err(e) = execvp(&cmd, &args);
+    let mut full_args = vec![CString::new(command).unwrap()];
+    full_args.extend(args.iter().map(|s| CString::new(s.as_str()).unwrap()));
+    let Err(e) = execvp(&cmd, &full_args);
     eprintln!("execvp failed: {}", e);
     return 1;
 }

@@ -16,7 +16,7 @@ enum Commands {
     Run {
         rootfs: String,
         command: String,
-        #[arg(trailing_var_arg = true)]
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 }
