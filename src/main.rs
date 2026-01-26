@@ -1,5 +1,5 @@
-use anyhow::Error;
 use clap::Parser;
+mod cgroup;
 mod runtime;
 use runtime::run_container;
 
@@ -21,7 +21,7 @@ enum Commands {
     },
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {

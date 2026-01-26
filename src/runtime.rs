@@ -1,3 +1,4 @@
+use crate::cgroup::setup_cgroup;
 use anyhow::Result;
 use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
@@ -8,34 +9,26 @@ use std::ffi::CString;
 
 const STACK_SIZE: usize = 1024 * 1024; // 1MB stack
 
-pub fn run_container(rootfs: &str, command: &str, args: Vec<String>) -> Result<()> {
+pub fn run_container(
+    rootfs: &str,
+    command: &str,
+    args: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut stack = vec![0u8; STACK_SIZE];
-
     let flags = CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWUTS;
-    let mut rootfs = Some(rootfs.to_string());
-    let mut command = Some(command.to_string());
-    let mut args = Some(args);
-
     let child_pid: nix::unistd::Pid;
 
     unsafe {
-        env::set_var("PATH", "/bin:/sbin:/usr/bin:/usr/sbin");
         child_pid = clone(
-            Box::new(move || {
-                let rootfs = rootfs.take().unwrap();
-                let command = command.take().unwrap();
-                let args = args.take().unwrap();
-
-                child_process(rootfs, command, args)
-            }),
+            Box::new(move || child_process(rootfs.to_string(), command.to_string(), args.clone())),
             &mut stack,
             flags,
             Some(Signal::SIGCHLD as i32),
         )?;
     }
 
+    setup_cgroup(child_pid.as_raw())?;
     println!("Container started with PID: {}", child_pid);
-
     nix::sys::wait::waitpid(child_pid, None)?;
     Ok(())
 }
@@ -76,10 +69,15 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
 }
 
 fn exec_command(command: &str, args: Vec<String>) -> isize {
-    println!("Executing {:?} with args {:?}", command, args);
     let cmd = CString::new(command).unwrap();
-    let mut full_args = vec![CString::new(command).unwrap()];
+    let mut full_args = vec![cmd.clone()];
     full_args.extend(args.iter().map(|s| CString::new(s.as_str()).unwrap()));
+
+    unsafe {
+        env::set_var("PATH", "/bin:/sbin:/usr/bin:/usr/sbin");
+    }
+
+    println!("Executing {:?} with args {:?}", command, full_args);
     let Err(e) = execvp(&cmd, &full_args);
     eprintln!("exec: {}", e);
     return 1;
