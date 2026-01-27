@@ -1,6 +1,7 @@
 use clap::Parser;
 mod cgroup;
 mod namespace;
+mod pivot_root;
 mod runtime;
 use runtime::run_container;
 

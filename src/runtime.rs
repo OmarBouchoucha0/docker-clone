@@ -1,11 +1,16 @@
 // use crate::cgroup::setup_cgroup;
+use crate::namespace::setup_user_namespace;
+use crate::pivot_root::setup_rootfs;
 use anyhow::Result;
 use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
-use nix::unistd::{chdir, chroot, execvp, sethostname};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
+use nix::unistd::{close, read, write};
+use nix::unistd::{execvp, sethostname};
 use std::env;
 use std::ffi::CString;
+use std::os::fd::AsRawFd;
 
 const STACK_SIZE: usize = 1024 * 1024; // 1MB stack
 
@@ -15,15 +20,23 @@ pub fn run_container(
     args: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut stack = vec![0u8; STACK_SIZE];
-    let flags = CloneFlags::CLONE_NEWPID
-        | CloneFlags::CLONE_NEWNS
-        | CloneFlags::CLONE_NEWUTS
-        | CloneFlags::CLONE_NEWUSER;
+    let flags = CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWUTS;
     let child_pid: nix::unistd::Pid;
+
+    let (parent_sock, child_sock) = socketpair(
+        AddressFamily::Unix,
+        SockType::SeqPacket,
+        None,
+        SockFlag::empty(),
+    )?;
 
     unsafe {
         child_pid = clone(
-            Box::new(move || child_process(rootfs.to_string(), command.to_string(), args.clone())),
+            Box::new(move || {
+                let mut buf = [0u8; 1];
+                read(child_sock.as_raw_fd(), &mut buf).unwrap();
+                child_process(rootfs.to_string(), command.to_string(), args.clone())
+            }),
             &mut stack,
             flags,
             Some(Signal::SIGCHLD as i32),
@@ -32,7 +45,9 @@ pub fn run_container(
     // TODO : NEED TO CREATE A SUBTREE AND THEN DELEGATE THE CGROUP TO IT
     // setup_cgroup(child_pid.as_raw())?;
 
-    setup_userns(child_pid.as_raw())?;
+    setup_user_namespace(child_pid.as_raw())?;
+
+    write(parent_sock.as_raw_fd(), &[1])?;
     println!("Container started with PID: {}", child_pid);
     nix::sys::wait::waitpid(child_pid, None)?;
     Ok(())
@@ -52,15 +67,11 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
         None::<&str>,
     )
     .unwrap();
+
     sethostname("docker-clone").unwrap();
-    if let Err(e) = chroot(rootfs.as_str()) {
-        eprintln!("chroot failed: {}", e);
-        return 1;
-    }
-    if let Err(e) = chdir("/") {
-        eprintln!("chdir failed: {}", e);
-        return 1;
-    }
+
+    setup_rootfs(&rootfs).unwrap();
+
     std::fs::create_dir_all("/proc").unwrap();
     mount(
         Some("proc"),
@@ -70,6 +81,7 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
         None::<&str>,
     )
     .unwrap();
+
     return exec_command(&command, args);
 }
 
