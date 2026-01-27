@@ -3,7 +3,7 @@ use std::io::Write;
 
 pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
     let cgroup_path = format!("/sys/fs/cgroup/docker-clone/{}", pid);
-
+    println!("Creating cgroup at {}", cgroup_path);
     fs::create_dir_all(&cgroup_path)?;
 
     // Memory limit: 100MB
