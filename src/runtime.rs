@@ -1,4 +1,4 @@
-use crate::cgroup::setup_cgroup;
+// use crate::cgroup::setup_cgroup;
 use anyhow::Result;
 use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
@@ -15,7 +15,10 @@ pub fn run_container(
     args: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut stack = vec![0u8; STACK_SIZE];
-    let flags = CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWUTS;
+    let flags = CloneFlags::CLONE_NEWPID
+        | CloneFlags::CLONE_NEWNS
+        | CloneFlags::CLONE_NEWUTS
+        | CloneFlags::CLONE_NEWUSER;
     let child_pid: nix::unistd::Pid;
 
     unsafe {
@@ -26,8 +29,10 @@ pub fn run_container(
             Some(Signal::SIGCHLD as i32),
         )?;
     }
+    // TODO : NEED TO CREATE A SUBTREE AND THEN DELEGATE THE CGROUP TO IT
+    // setup_cgroup(child_pid.as_raw())?;
 
-    setup_cgroup(child_pid.as_raw())?;
+    setup_userns(child_pid.as_raw())?;
     println!("Container started with PID: {}", child_pid);
     nix::sys::wait::waitpid(child_pid, None)?;
     Ok(())

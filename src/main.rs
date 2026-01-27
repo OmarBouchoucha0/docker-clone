@@ -1,5 +1,6 @@
 use clap::Parser;
 mod cgroup;
+mod namespace;
 mod runtime;
 use runtime::run_container;
 
