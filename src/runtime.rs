@@ -1,4 +1,4 @@
-// use crate::cgroup::setup_cgroup;
+use crate::cgroup::setup_cgroup;
 use crate::namespace::setup_user_namespace;
 use crate::pivot_root::setup_rootfs;
 use anyhow::Result;
@@ -46,8 +46,7 @@ pub fn run_container(
         )?;
     }
 
-    // TODO : NEED TO CREATE A SUBTREE AND THEN DELEGATE THE CGROUP TO IT
-    // setup_cgroup(child_pid.as_raw())?;
+    setup_cgroup(child_pid.as_raw())?;
 
     setup_user_namespace(child_pid.as_raw())?;
 
