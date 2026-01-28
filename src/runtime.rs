@@ -6,8 +6,8 @@ use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
-use nix::unistd::{close, read, write};
 use nix::unistd::{execvp, sethostname};
+use nix::unistd::{read, write};
 use std::env;
 use std::ffi::CString;
 use std::os::fd::AsRawFd;
@@ -20,7 +20,10 @@ pub fn run_container(
     args: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut stack = vec![0u8; STACK_SIZE];
-    let flags = CloneFlags::CLONE_NEWPID | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWUTS;
+    let flags = CloneFlags::CLONE_NEWPID
+        | CloneFlags::CLONE_NEWNS
+        | CloneFlags::CLONE_NEWUTS
+        | CloneFlags::CLONE_NEWUSER;
     let child_pid: nix::unistd::Pid;
 
     let (parent_sock, child_sock) = socketpair(
@@ -42,6 +45,7 @@ pub fn run_container(
             Some(Signal::SIGCHLD as i32),
         )?;
     }
+
     // TODO : NEED TO CREATE A SUBTREE AND THEN DELEGATE THE CGROUP TO IT
     // setup_cgroup(child_pid.as_raw())?;
 
@@ -70,7 +74,7 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
 
     sethostname("docker-clone").unwrap();
 
-    setup_rootfs(&rootfs).unwrap();
+    // setup_rootfs(&rootfs).unwrap();
 
     std::fs::create_dir_all("/proc").unwrap();
     mount(
