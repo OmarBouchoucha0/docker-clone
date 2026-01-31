@@ -37,7 +37,7 @@ pub fn run_container(
         child_pid = clone(
             Box::new(move || {
                 let mut buf = [0u8; 1];
-                if let Err(_) = read(child_sock.as_raw_fd(), &mut buf) {
+                if read(child_sock.as_raw_fd(), &mut buf).is_err() {
                     return 1;
                 }
                 child_process(rootfs.to_string(), command.to_string(), args.clone())
@@ -50,12 +50,12 @@ pub fn run_container(
 
     if let Err(e) = setup_cgroup(child_pid.as_raw()) {
         eprintln!("Failed to setup cgroups: {}", e);
-        return Err(e.into());
+        return Err(e);
     }
 
     if let Err(e) = setup_user_namespace(child_pid.as_raw()) {
         eprintln!("Failed to setup user namespace: {}", e);
-        return Err(e.into());
+        return Err(e);
     }
 
     if let Err(e) = write(parent_sock.as_raw_fd(), &[1]) {
