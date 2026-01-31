@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 
 pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
     // Read cgroup information
@@ -22,7 +23,8 @@ pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to read cgroup.controllers: {}", e))?;
     println!("Available controllers: {}", controllers);
 
-    enable_controllers(&parent_cgroup)?;
+    std::fs::create_dir_all(&child_cgroup)?;
+    enable_controllers(&child_cgroup)?;
 
     // Create cgroup directory
     println!("Creating cgroup at {}", child_cgroup);
@@ -53,9 +55,31 @@ pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn enable_controllers(parent: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let subtree_control_path = format!("{}/cgroup.subtree_control", parent);
-    std::fs::write(&subtree_control_path, "+cpu +memory +pids")
-        .map_err(|e| format!("Failed to enable controllers: {}", e))?;
+    let controllers_file = format!("{}/cgroup.controllers", parent);
+    let subtree_file = format!("{}/cgroup.subtree_control", parent);
+
+    // If this cgroup doesn't allow delegation (no controllers file), skip.
+    if !Path::new(&controllers_file).exists() {
+        return Ok(());
+    }
+
+    let controllers = fs::read_to_string(&controllers_file)?;
+    if controllers.trim().is_empty() {
+        return Ok(());
+    }
+
+    // Prepare "+cpu +memory +pids" etc
+    let enable_string = controllers
+        .split_whitespace()
+        .map(|c| format!("+{}", c))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Only write if subtree_control exists
+    if Path::new(&subtree_file).exists() {
+        fs::write(&subtree_file, enable_string)?;
+    }
+
     Ok(())
 }
 
