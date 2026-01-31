@@ -1,6 +1,6 @@
 use crate::cgroup::setup_cgroup;
 use crate::namespace::setup_user_namespace;
-use crate::pivot_root::setup_rootfs;
+// use crate::pivot_root::setup_rootfs;
 use anyhow::Result;
 use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
