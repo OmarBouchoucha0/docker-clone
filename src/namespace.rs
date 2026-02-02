@@ -4,17 +4,14 @@ pub fn setup_user_namespace(pid: i32) -> Result<(), Box<dyn std::error::Error>> 
     let uid = getuid().as_raw();
     let gid = getgid().as_raw();
 
-    // Deny setgroups to prevent privilege escalation
     if let Err(e) = std::fs::write(format!("/proc/{}/setgroups", pid), "deny") {
         return Err(format!("Failed to write setgroups: {}", e).into());
     }
 
-    // Map user ID
     if let Err(e) = std::fs::write(format!("/proc/{}/uid_map", pid), format!("0 {} 1", uid)) {
         return Err(format!("Failed to write uid_map: {}", e).into());
     }
 
-    // Map group ID
     if let Err(e) = std::fs::write(format!("/proc/{}/gid_map", pid), format!("0 {} 1", gid)) {
         return Err(format!("Failed to write gid_map: {}", e).into());
     }

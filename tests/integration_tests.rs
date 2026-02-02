@@ -3,24 +3,20 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-// Helper function to check if running as root
 fn is_root() -> bool {
     nix::unistd::getuid().is_root()
 }
 
-// Helper function to create a minimal rootfs for testing
 fn create_test_rootfs(temp_dir: &TempDir) -> Result<String, Box<dyn std::error::Error>> {
     let rootfs_path = temp_dir.path().join("rootfs");
     fs::create_dir_all(&rootfs_path)?;
 
-    // Create basic directory structure
     fs::create_dir_all(rootfs_path.join("bin"))?;
     fs::create_dir_all(rootfs_path.join("usr/bin"))?;
     fs::create_dir_all(rootfs_path.join("proc"))?;
     fs::create_dir_all(rootfs_path.join("sys"))?;
     fs::create_dir_all(rootfs_path.join("dev"))?;
 
-    // Copy a simple binary if available (like /bin/echo)
     if Path::new("/bin/echo").exists() {
         fs::copy("/bin/echo", rootfs_path.join("bin/echo"))?;
     }
@@ -39,8 +35,6 @@ fn test_container_lifecycle_with_root() {
     let temp_dir = TempDir::new().unwrap();
     let rootfs = create_test_rootfs(&temp_dir).unwrap();
 
-    // Test that our container binary can be built and executed
-    // This is a basic smoke test
     let output = Command::new("cargo")
         .args(&[
             "run",
@@ -53,8 +47,6 @@ fn test_container_lifecycle_with_root() {
         .output()
         .expect("Failed to execute container");
 
-    // The test should either succeed (container runs) or fail gracefully
-    // We're mainly testing that the code doesn't panic unexpectedly
     assert!(output.status.success() || !output.stderr.is_empty());
 
     println!(
@@ -80,7 +72,6 @@ fn test_container_isolation_verification() {
     let temp_dir = TempDir::new().unwrap();
     let rootfs = create_test_rootfs(&temp_dir).unwrap();
 
-    // Test container isolation by checking if it can see host processes
     let output = Command::new("cargo")
         .args(&["run", "--", "run", &rootfs, "/bin/sh", "-c", "ls /proc"])
         .output()
@@ -88,89 +79,68 @@ fn test_container_isolation_verification() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // In a properly isolated container, /proc should show only container processes
-    // This is a basic check - in reality we'd need more sophisticated testing
     assert!(stdout.contains("1") || output.status.success());
 }
 
 #[test]
 fn test_argument_validation() {
-    // Test that the CLI properly validates arguments without requiring privileges
     let test_cases = vec![
-        vec!["run", "/invalid/path", "/bin/echo"],   // Invalid path
-        vec!["run", "/tmp", "/nonexistent/command"], // Invalid command
+        vec!["run", "/invalid/path", "/bin/echo"],
+        vec!["run", "/tmp", "/nonexistent/command"],
     ];
 
     for args in test_cases {
-        let mut full_args = vec!["cargo", "run", "--"];
-        full_args.extend(args.iter());
-
-        let output = Command::new("cargo")
-            .args(&full_args[1..]) // Skip the first "cargo"
+        let output = Command::new(env!("CARGO_BIN_EXE_docker-clone"))
+            .args(&args)
             .output()
-            .expect("Failed to execute container");
+            .expect("Failed to execute");
 
-        // Should either succeed or fail gracefully, not hang
-        println!("Exit code: {}", output.status);
-        if output.stdout.len() > 0 {
-            println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-        }
-        if output.stderr.len() > 0 {
-            println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-        }
-
-        // Should fail gracefully, not panic or hang
         assert!(
-            output.status.code().is_some()
-                || !output.stderr.is_empty()
-                || !output.stdout.is_empty()
+            !output.status.success(),
+            "Expected failure, got success:\nstdout={}\nstderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 }
 
 #[test]
 fn test_error_handling() {
-    // Test that errors are handled gracefully
     let test_cases = vec![
-        vec!["run", "", "/bin/echo"],            // Empty rootfs
-        vec!["run", "/tmp", ""],                 // Empty command
-        vec!["run", "/tmp", "invalid\0command"], // Invalid command with null byte
+        vec!["run", "", "/bin/echo"],
+        vec!["run", "/tmp", ""],
+        vec!["run", "/tmp", "invalid\0command"],
     ];
 
     for args in test_cases {
-        let mut full_args = vec!["cargo", "run", "--"];
-        full_args.extend(args.iter());
-
-        // These should fail gracefully, not panic
-        let output = Command::new("cargo")
-            .args(&full_args[1..])
+        let output = Command::new(env!("CARGO_BIN_EXE_docker-clone"))
+            .args(&args)
             .output()
-            .expect("Failed to execute container");
+            .expect("Failed to execute");
 
-        // Should either succeed (if empty args are handled) or fail gracefully
-        assert!(!output.stderr.is_empty() || !output.stdout.is_empty());
+        assert!(
+            !output.stderr.is_empty(),
+            "Expected stderr output but got none"
+        );
     }
 }
 
 #[test]
 fn test_cgroup_availability() {
-    // Test if cgroup v2 is available on the system
     if Path::new("/sys/fs/cgroup/cgroup.controllers").exists() {
         let controllers = fs::read_to_string("/sys/fs/cgroup/cgroup.controllers")
             .expect("Failed to read cgroup.controllers");
 
         println!("Available cgroup controllers: {}", controllers);
 
-        // Should have at least basic controllers
         assert!(controllers.len() > 0);
 
-        // Check for commonly available controllers
         let common_controllers = vec!["cpu", "memory", "pids"];
         for controller in common_controllers {
             if controllers.contains(controller) {
-                println!("✓ {} controller available", controller);
+                println!("{} controller available", controller);
             } else {
-                println!("⚠ {} controller not available", controller);
+                println!("{} controller not available", controller);
             }
         }
     } else {
@@ -180,7 +150,6 @@ fn test_cgroup_availability() {
 
 #[test]
 fn test_namespace_support() {
-    // Test if user namespaces are supported
     if is_root() {
         let output = Command::new("unshare")
             .args(&["--user", "--pid", "--fork", "echo", "namespace test"])
@@ -188,10 +157,10 @@ fn test_namespace_support() {
             .expect("Failed to test namespace support");
 
         if output.status.success() {
-            println!("✓ Namespace support available");
+            println!("Namespace support available");
         } else {
             println!(
-                "⚠ Namespace support limited: {}",
+                "Namespace support limited: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
         }
@@ -202,7 +171,6 @@ fn test_namespace_support() {
 
 #[test]
 fn test_basic_system_requirements() {
-    // Test basic system requirements for container runtime
     let requirements = vec![
         ("/proc", "proc filesystem"),
         ("/sys", "sysfs filesystem"),
@@ -234,9 +202,8 @@ fn test_container_binary_compilation() {
         "Compilation failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    println!("✓ Container binary compiles successfully");
+    println!("Container binary compiles successfully");
 
-    // Also test build
     let output = Command::new("cargo")
         .args(&["build"])
         .output()
@@ -252,7 +219,6 @@ fn test_container_binary_compilation() {
 
 #[test]
 fn test_unit_tests_pass() {
-    // Run unit tests to ensure they pass
     let output = Command::new("cargo")
         .args(&["test", "--lib"])
         .output()
@@ -268,7 +234,6 @@ fn test_unit_tests_pass() {
 
 #[test]
 fn test_help_and_usage() {
-    // Test that help commands work without panicking
     let help_cases = vec![vec!["--help"], vec!["run", "--help"]];
 
     for args in help_cases {
@@ -278,8 +243,7 @@ fn test_help_and_usage() {
             .output()
             .expect("Failed to execute help command");
 
-        // Help commands should exit with a non-zero status but not panic
         assert!(!output.stderr.is_empty() || !output.stdout.is_empty());
-        println!("✓ Help command works for args: {:?}", args);
+        println!("Help command works for args: {:?}", args);
     }
 }

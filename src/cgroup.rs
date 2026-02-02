@@ -3,7 +3,6 @@ use std::io::Write;
 use std::path::Path;
 
 pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
-    // Read cgroup information
     let cgroup_line = std::fs::read_to_string("/proc/self/cgroup")
         .map_err(|e| format!("Failed to read /proc/self/cgroup: {}", e))?;
 
@@ -17,7 +16,6 @@ pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
     let parent_cgroup = format!("{}{}", base, cgroup_rel);
     let child_cgroup = format!("{}/docker-clone-{}", parent_cgroup, pid);
 
-    // Check available controllers
     let controllers_path = format!("{}/cgroup.controllers", parent_cgroup);
     let controllers = std::fs::read_to_string(&controllers_path)
         .map_err(|e| format!("Failed to read cgroup.controllers: {}", e))?;
@@ -26,22 +24,18 @@ pub fn setup_cgroup(pid: i32) -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&child_cgroup)?;
     enable_controllers(&child_cgroup)?;
 
-    // Create cgroup directory
     println!("Creating cgroup at {}", child_cgroup);
     fs::create_dir_all(&child_cgroup)
         .map_err(|e| format!("Failed to create cgroup directory: {}", e))?;
 
-    // Memory limit: 100MB
     let memory_limit_path = format!("{}/memory.max", child_cgroup);
     fs::write(&memory_limit_path, "104857600")
         .map_err(|e| format!("Failed to set memory limit: {}", e))?;
 
-    // CPU limit: 50% of one core
     let cpu_limit_path = format!("{}/cpu.max", child_cgroup);
     fs::write(&cpu_limit_path, "50000 100000")
         .map_err(|e| format!("Failed to set CPU limit: {}", e))?;
 
-    // Attach process to cgroup
     let procs_path = format!("{}/cgroup.procs", child_cgroup);
     let mut procs = fs::OpenOptions::new()
         .write(true)

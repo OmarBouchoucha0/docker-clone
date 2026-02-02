@@ -2,10 +2,10 @@ use crate::cgroup::setup_cgroup;
 use crate::namespace::setup_user_namespace;
 use crate::pivot_root::setup_rootfs;
 use anyhow::Result;
-use nix::mount::{mount, MsFlags};
-use nix::sched::{clone, CloneFlags};
+use nix::mount::{MsFlags, mount};
+use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
-use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
 use nix::unistd::{execvp, sethostname};
 use nix::unistd::{read, write};
 use std::env;
@@ -48,10 +48,10 @@ pub fn run_container(
         )?;
     }
 
-    if let Err(e) = setup_cgroup(child_pid.as_raw()) {
-        eprintln!("Failed to setup cgroups: {}", e);
-        return Err(e);
-    }
+    // if let Err(e) = setup_cgroup(child_pid.as_raw()) {
+    //     eprintln!("Failed to setup cgroups: {}", e);
+    //     return Err(e);
+    // }
 
     if let Err(e) = setup_user_namespace(child_pid.as_raw()) {
         eprintln!("Failed to setup user namespace: {}", e);

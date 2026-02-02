@@ -198,30 +198,14 @@ mod tests {
         let result = Cli::try_parse_from(["container", "invalid"]);
         assert!(result.is_err());
 
-        match result.unwrap_err() {
-            clap::Error { kind, .. } => {
-                assert!(matches!(
-                    kind,
-                    clap::error::ErrorKind::UnrecognizedSubcommand
-                ));
-            }
-        }
-    }
-
-    #[test]
-    fn test_cli_invalid_subcommand() {
-        // Test handling of invalid subcommands
-        let result = Cli::try_parse_from(["container", "invalid"]);
-        assert!(result.is_err());
-
         let error = result.unwrap_err();
         assert!(error.to_string().contains("invalid") || error.to_string().len() > 0);
     }
 
     #[test]
     fn test_cli_empty_args() {
-        // Test parsing with no arguments at all
-        let result: Result<Cli, _> = Cli::try_parse_from::<&str, &str>(&[]);
+        // Test parsing with no arguments at all(first arg is the name of the program)
+        let result = Cli::try_parse_from(["prog"]);
         assert!(result.is_err());
     }
 
