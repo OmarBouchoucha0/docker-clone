@@ -44,7 +44,7 @@ pub fn run_container(
     unsafe {
         child_pid = clone(
             Box::new(move || {
-                let mut buf = [0u8; 1];
+                let mut buf = [0u8];
                 if read(child_sock.as_raw_fd(), &mut buf).is_err() {
                     return 1;
                 }
@@ -55,31 +55,27 @@ pub fn run_container(
             Some(Signal::SIGCHLD as i32),
         )?;
     }
-    if child_pid == Pid::from_raw(0) {
-        // if let Err(e) = setup_cgroup(child_pid.as_raw()) {
-        //     eprintln!("Failed to setup cgroups: {}", e);
-        //     return Err(e);
-        // }
+    // if let Err(e) = setup_cgroup(child_pid.as_raw()) {
+    //     eprintln!("Failed to setup cgroups: {}", e);
+    //     return Err(e);
+    // }
 
-        if let Err(e) = setup_user_namespace(child_pid.as_raw()) {
-            eprintln!("Failed to setup user namespace: {}", e);
-            return Err(e);
-        }
+    // if let Err(e) = setup_user_namespace(child_pid.as_raw()) {
+    //     eprintln!("Failed to setup user namespace: {}", e);
+    //     return Err(e);
+    // }
+    if let Err(e) = write(parent_sock.as_raw_fd(), &[1]) {
+        eprintln!("Failed to signal child process: {}", e);
+        return Err(e.into());
+    }
 
-        if let Err(e) = write(parent_sock.as_raw_fd(), &[1]) {
-            eprintln!("Failed to signal child process: {}", e);
-            return Err(e.into());
-        }
+    println!("Container started with PID: {}", child_pid);
 
-        println!("Container started with PID: {}", child_pid);
-        return Ok(());
-    } else {
-        match nix::sys::wait::waitpid(child_pid, None) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                eprintln!("Failed to wait for child process: {}", e);
-                Err(e.into())
-            }
+    match nix::sys::wait::waitpid(child_pid, None) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            eprintln!("Failed to wait for child process: {}", e);
+            Err(e.into())
         }
     }
 }
@@ -105,8 +101,8 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
         eprintln!("Failed to set hostname: {}", e);
         return 1;
     }
-
-    if let Err(e) = setup_rootfs(&rootfs) {
+    let path: &Path = Path::new(&rootfs);
+    if let Err(e) = setup_rootfs(path) {
         eprintln!("Failed to setup root filesystem: {}", e);
         return 1;
     }
@@ -150,7 +146,6 @@ fn exec_command(command: &str, args: Vec<String>) -> isize {
         }
     }
 
-    // Set PATH environment variable
     unsafe {
         env::set_var("PATH", "/bin:/sbin:/usr/bin:/usr/sbin");
     }
@@ -222,11 +217,9 @@ mod tests {
 
     #[test]
     fn test_exec_command_handles_invalid_command() {
-        let command = ""; // Invalid empty command
+        let command = "";
         let _args = vec!["test".to_string()];
 
-        // This should create a valid CString even from empty string
-        // The actual error would occur when execvp tries to execute it
         assert!(CString::new(command).is_ok());
     }
 
@@ -235,14 +228,12 @@ mod tests {
         let _command = "/bin/ls";
         let _args = vec!["invalid\0arg".to_string()];
 
-        // This should fail to create CString due to null byte
         let result = CString::new("invalid\0arg");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_exec_command_environment_variable_setting() {
-        // Test that PATH is set correctly
         unsafe {
             env::set_var("PATH", "/bin:/sbin:/usr/bin:/usr/sbin");
         }
