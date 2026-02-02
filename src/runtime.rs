@@ -1,4 +1,4 @@
-use crate::cgroup::setup_cgroup;
+// use crate::cgroup::setup_cgroup;
 use crate::namespace::setup_user_namespace;
 use crate::pivot_root::setup_rootfs;
 use anyhow::Result;
@@ -6,11 +6,12 @@ use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
-use nix::unistd::{execvp, sethostname};
+use nix::unistd::{Pid, execvp, sethostname};
 use nix::unistd::{read, write};
 use std::env;
 use std::ffi::CString;
 use std::os::fd::AsRawFd;
+use std::path::Path;
 
 const STACK_SIZE: usize = 1024 * 1024; // 1MB stack
 
@@ -33,6 +34,13 @@ pub fn run_container(
         SockFlag::empty(),
     )?;
 
+    if !Path::new(rootfs).exists() {
+        return Err("Invalid rootfs".into());
+    }
+    if !Path::new(command).exists() {
+        return Err("Command does not exist".into());
+    }
+
     unsafe {
         child_pid = clone(
             Box::new(move || {
@@ -47,29 +55,31 @@ pub fn run_container(
             Some(Signal::SIGCHLD as i32),
         )?;
     }
+    if child_pid == Pid::from_raw(0) {
+        // if let Err(e) = setup_cgroup(child_pid.as_raw()) {
+        //     eprintln!("Failed to setup cgroups: {}", e);
+        //     return Err(e);
+        // }
 
-    // if let Err(e) = setup_cgroup(child_pid.as_raw()) {
-    //     eprintln!("Failed to setup cgroups: {}", e);
-    //     return Err(e);
-    // }
+        if let Err(e) = setup_user_namespace(child_pid.as_raw()) {
+            eprintln!("Failed to setup user namespace: {}", e);
+            return Err(e);
+        }
 
-    if let Err(e) = setup_user_namespace(child_pid.as_raw()) {
-        eprintln!("Failed to setup user namespace: {}", e);
-        return Err(e);
-    }
+        if let Err(e) = write(parent_sock.as_raw_fd(), &[1]) {
+            eprintln!("Failed to signal child process: {}", e);
+            return Err(e.into());
+        }
 
-    if let Err(e) = write(parent_sock.as_raw_fd(), &[1]) {
-        eprintln!("Failed to signal child process: {}", e);
-        return Err(e.into());
-    }
-
-    println!("Container started with PID: {}", child_pid);
-
-    match nix::sys::wait::waitpid(child_pid, None) {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            eprintln!("Failed to wait for child process: {}", e);
-            Err(e.into())
+        println!("Container started with PID: {}", child_pid);
+        return Ok(());
+    } else {
+        match nix::sys::wait::waitpid(child_pid, None) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                eprintln!("Failed to wait for child process: {}", e);
+                Err(e.into())
+            }
         }
     }
 }
@@ -80,7 +90,6 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
         rootfs, command, args
     );
 
-    // Make mount namespace private
     if let Err(e) = mount(
         None::<&str>,
         "/",
@@ -92,25 +101,21 @@ fn child_process(rootfs: String, command: String, args: Vec<String>) -> isize {
         return 1;
     }
 
-    // Set hostname
     if let Err(e) = sethostname("docker-clone") {
         eprintln!("Failed to set hostname: {}", e);
         return 1;
     }
 
-    // Setup rootfs with proper error handling
     if let Err(e) = setup_rootfs(&rootfs) {
         eprintln!("Failed to setup root filesystem: {}", e);
         return 1;
     }
 
-    // Ensure /proc exists
     if let Err(e) = std::fs::create_dir_all("/proc") {
         eprintln!("Failed to create /proc directory: {}", e);
         return 1;
     }
 
-    // Mount proc filesystem
     if let Err(e) = mount(
         Some("proc"),
         "/proc",
@@ -153,7 +158,7 @@ fn exec_command(command: &str, args: Vec<String>) -> isize {
     println!("Executing {:?} with args {:?}", command, full_args);
 
     match execvp(&cmd, &full_args) {
-        Ok(_) => 0, // This should never be reached as execvp replaces the process
+        Ok(_) => 0,
         Err(e) => {
             eprintln!("exec failed: {}", e);
             1

@@ -109,7 +109,7 @@ fn test_error_handling() {
     let test_cases = vec![
         vec!["run", "", "/bin/echo"],
         vec!["run", "/tmp", ""],
-        vec!["run", "/tmp", "invalid\0command"],
+        vec!["run", "/tmp", "invalid\x01command"],
     ];
 
     for args in test_cases {

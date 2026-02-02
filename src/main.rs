@@ -32,7 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             command,
             args,
         } => {
-            run_container(&rootfs, &command, args)?;
+            if let Err(e) = run_container(&rootfs, &command, args) {
+                eprintln!("Container error: {}", e);
+                std::process::exit(1);
+            }
         }
     }
     Ok(())
